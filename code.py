@@ -16,14 +16,15 @@ import statsmodels.api as sm
 
 
 
-st.subheader("🌸 Hello Kitty 💖")
+#st.subheader("🌸 Hello Kitty 💖")
 
-st.image(
-    "/Users/benallal/Desktop/hello_kitty.jpg",  # chemin vers ton image
-    caption="🌸",
-    use_column_width=False,
-    width=200
-)
+#st.image(
+#    "/Users/benallal/Desktop/hello_kitty.jpg",  # chemin vers ton image
+#    caption="🌸",
+#    use_column_width=False,
+#    width=200
+#)
+
 
 st.set_page_config(page_title="Cancer par âge", page_icon="🩺")
 
@@ -48,8 +49,8 @@ def small_fig(w=5, h=3, dpi=110):
 #   CHARGEMENT DONNÉES
 # =========================
 df = pd.read_csv(
-    "/Users/benallal/Desktop/dashbord/The_Cancer_data_1500_V2 2.csv",
-    sep=";"
+    "F:/personnel/MOSEF Sorbonne/Cours/Technique de base de données & Dashboard/Projet_Dashboard/data/The_Cancer_data_1500_V2.csv",
+    sep=","
 )
 
 # Force le typage numérique
