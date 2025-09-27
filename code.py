@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
+from plotnine import ggplot, aes, geom_histogram, labs, theme_minimal, scale_fill_brewer
 
 # sklearn
 from sklearn.model_selection import train_test_split, StratifiedKFold, GridSearchCV
@@ -39,19 +41,73 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+# =========================
+#   CHARGEMENT DONNÉES
+# =========================
+df = pd.read_csv(
+    "data/The_Cancer_data_1500_V2.csv",
+    sep=","
+)
+
+# ------------------------------ # Filtres # ------------------------------
+st.sidebar.header("Filtres")
+age_range = st.sidebar.slider("Âge", int(df.Age.min()), int(df.Age.max()), (20, 80)) 
+sexe_filter = st.sidebar.multiselect("Sexe", options=["Homme", "Femme"], default=["Homme", "Femme"]) 
+tabac_filter = st.sidebar.multiselect("Tabagisme", options=["Non", "Oui"], default=["Non", "Oui"]) 
+genetic_filter = st.sidebar.multiselect("Risque génétique", options=["Faible", "Moyen", "Élevé"], default=["Faible", "Moyen", "Élevé"])
+
+# Transformation des labels 
+df["Sexe_label"] = df["Gender"].map({0: "Homme", 1: "Femme"}) 
+df["Tabac_label"] = df["Smoking"].map({0: "Non", 1: "Oui"}) 
+df["Genetic_label"] = df["GeneticRisk"].map({0: "Faible", 1: "Moyen", 2: "Élevé"})
+
+# Application des filtres
+df_filtered = df[ 
+    (df["Age"].between(age_range[0], age_range[1])) & 
+    (df["Sexe_label"].isin(sexe_filter)) & 
+    (df["Tabac_label"].isin(tabac_filter)) & 
+    (df["Genetic_label"].isin(genetic_filter)) ]
+
+
+# ------------------------------ # KPIs # ------------------------------
+st.title("📊 Dashboard Cancer Patients")
+col1, col2, col3, col4 = st.columns(4) 
+col1.metric("Patients", len(df_filtered)) 
+col2.metric("% Cancer", f"{100*df_filtered.Diagnosis.mean():.1f}%") 
+col3.metric("Âge moyen", f"{df_filtered.Age.mean():.1f} ans") 
+col4.metric("IMC moyen", f"{df_filtered.BMI.mean():.1f}")
+
+
+# ------------------------------ # Graphiques démographiques # ------------------------------
+st.header("📌 Profil démographique")
+
+plot = (
+    ggplot(df_filtered, aes(x="Age", fill="Diagnosis"))
+    + geom_histogram(bins=20, position="stack", color="black")  # barres de même taille, bord noir
+    + scale_fill_brewer(type='qual', palette='Set2')            # palette de couleurs plus jolie
+    + theme_minimal()                                           # style épuré à la ggplot
+    + labs(title="Distribution des âges par Diagnostic", 
+           x="Âge", 
+           y="Nombre de patients",
+           fill="Diagnosis")
+)
+
+st.pyplot(plot.draw())
+
+fig, ax = plt.subplots() 
+df_filtered["Sexe_label"].value_counts().plot.pie(autopct="%1.1f%%", ax=ax) 
+ax.set_ylabel("") 
+st.pyplot(fig)
+
+
+
+
 # Fonction utilitaire pour des figures plus compactes
 def small_fig(w=5, h=3, dpi=110):
     fig, ax = plt.subplots(figsize=(w, h), dpi=dpi)
     return fig, ax
 
 
-# =========================
-#   CHARGEMENT DONNÉES
-# =========================
-df = pd.read_csv(
-    "F:/personnel/MOSEF Sorbonne/Cours/Technique de base de données & Dashboard/Projet_Dashboard/data/The_Cancer_data_1500_V2.csv",
-    sep=","
-)
 
 # Force le typage numérique
 for col in ["Age", "Gender", "BMI", "Smoking", "GeneticRisk",
@@ -63,7 +119,7 @@ for col in ["Age", "Gender", "BMI", "Smoking", "GeneticRisk",
 # =========================
 #   CAS DE CANCER PAR ÂGE
 # =========================
-st.title("📊 Nombre de cas de cancer par âge")
+
 
 cancer_counts = (
     df[df["Diagnosis"] == 1]
