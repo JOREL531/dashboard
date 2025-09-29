@@ -92,13 +92,19 @@ plot = (
            fill="Diagnosis")
 )
 
-st.pyplot(plot.draw())
 
 fig, ax = plt.subplots() 
 df_filtered["Sexe_label"].value_counts().plot.pie(autopct="%1.1f%%", ax=ax) 
 ax.set_ylabel("") 
-st.pyplot(fig)
 
+# Créer deux colonnes
+col1, col2 = st.columns(2)
+
+with col1:
+    st.pyplot(plot.draw())
+
+with col2:
+    st.pyplot(fig.draw())
 
 
 
