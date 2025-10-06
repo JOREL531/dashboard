@@ -6,6 +6,10 @@ import streamlit as st
 #from plotnine import ggplot, aes, geom_tile, geom_text, scale_fill_gradient, theme_minimal, theme, element_text, geom_col, element_blank
 import plotly.express as px
 
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, roc_auc_score, roc_curve, confusion_matrix
+
 # Importation de la base
 df = pd.read_csv("data/The_Cancer_data_1500_V2.csv",  sep=",")
 
@@ -215,3 +219,200 @@ with col3:
 
 
 st.subheader("Facteurs Médicaux")
+
+
+
+
+
+
+
+
+
+st.subheader("Prédiction : prédire la probabilité d'avoir un cancer")
+
+# je retire la cible
+X = df[["Age", "BMI", "Smoking", "GeneticRisk", "PhysicalActivity", "AlcoholIntake"]]
+y = df["Diagnosis"]
+
+#split
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
+
+model = LogisticRegression(max_iter=1000)
+model.fit(X_train, y_train)
+
+
+y_pred = model.predict(X_test)
+accuracy = accuracy_score(y_test, y_pred)
+st.markdown(f"Précision du modèle (test) : {accuracy:.3f}")
+
+# --- SECTION INTERACTIVE : PREDICTION PERSONNALISÉE ---
+st.markdown("### Simulation")
+
+# Curseurs
+col1, col2, col3 = st.columns(3)
+with col1:
+    age = st.slider("Âge", 18, 80, 40)
+    bmi = st.slider("IMC (BMI)", 10.0, 40.0, 22.0)
+with col2:
+    smoking = st.selectbox("Fumeur", ["Non", "Oui"])
+    genetic = st.selectbox("Risque génétique", ["Faible", "Moyen", "Élevé"])
+with col3:
+    physical = st.slider("Activité physique (0 à 10)", 0, 10, 5)
+    alcohol = st.slider("Consommation d'alcool (0 à 10)", 0, 10, 3)
+
+
+smoking_val = 1 if smoking == "Oui" else 0
+genetic_map = {"Faible": 0, "Moyen": 1, "Élevé": 2}
+genetic_val = genetic_map[genetic]
+
+# Création du DataFrame d’un seul individu
+X_new = pd.DataFrame({
+    "Age": [age],
+    "BMI": [bmi],
+    "Smoking": [smoking_val],
+    "GeneticRisk": [genetic_val],
+    "PhysicalActivity": [physical],
+    "AlcoholIntake": [alcohol]
+})
+
+# Prédiction de la probabilité de cancer
+proba_cancer = model.predict_proba(X_new)[0][1]
+
+# Affichage de la probabilité
+st.markdown("---")
+st.markdown("### Résultat de la prédiction :")
+
+col1, col2 = st.columns([2, 3])
+with col1:
+    st.metric(
+        label="Probabilité estimée d'avoir un cancer",
+        value=f"{100 * proba_cancer:.1f} %",
+        help="Calculée via la régression logistique"
+    )
+
+# Graphique visuel de la probabilité
+fig_proba = px.bar(
+    x=["Pas de cancer", "Cancer"],
+    y=[1 - proba_cancer, proba_cancer],
+    color=["Pas de cancer", "Cancer"],
+    color_discrete_map={"Pas de cancer": "#4B56EB", "Cancer": "#E63718"},
+    text=[f"{(1 - proba_cancer) * 100:.1f} %", f"{proba_cancer * 100:.1f} %"]
+)
+fig_proba.update_traces(textposition="outside", textfont=dict(size=16, color="white"))
+fig_proba.update_layout(
+    title="Probabilité estimée par le modèle",
+    yaxis_title="Probabilité",
+    xaxis_title="Diagnostic",
+    plot_bgcolor="rgba(0,0,0,0)",
+    paper_bgcolor="rgba(0,0,0,0)",
+    font=dict(color="white"),
+    showlegend=False
+)
+with col2:
+    st.plotly_chart(fig_proba, use_container_width=True)
+
+# PERF MODÈLE (ROC, GINI, CM) ---
+with st.expander("Performances du modèle (ROC, Gini, matrice de confusion)"):
+
+    y_proba_test = model.predict_proba(X_test)[:, 1]
+
+    #  AUC et Gini
+    auc = roc_auc_score(y_test, y_proba_test)
+    gini = 2 * auc - 1
+
+    # courbe ROC
+    fpr, tpr, _ = roc_curve(y_test, y_proba_test)
+    roc_df = pd.DataFrame({"FPR": fpr, "TPR": tpr})
+    roc_fig = px.line(
+        roc_df, x="FPR", y="TPR",
+        title=f"Courbe ROC (AUC = {auc:.3f}, Gini = {gini:.3f})"
+    )
+    roc_fig.add_scatter(x=[0, 1], y=[0, 1], mode="lines", name="Aléatoire", line=dict(dash="dash"))
+    roc_fig.update_layout(
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="white"),
+        xaxis_title="Taux de faux positifs (FPR)",
+        yaxis_title="Taux de vrais positifs (TPR)"
+    )
+
+    # matrice confusion
+    cm = confusion_matrix(y_test, model.predict(X_test))
+    cm_df = pd.DataFrame(cm, index=["Vrai : 0 (Pas de cancer)", "Vrai : 1 (Cancer)"],
+                         columns=["Prédit : 0", "Prédit : 1"])
+
+    cm_fig = px.imshow(
+        cm_df,
+        text_auto=True,
+        color_continuous_scale="Reds",
+        labels=dict(x="Prédiction", y="Valeur réelle", color="Effectif"),
+    )
+    cm_fig.update_layout(
+        title="Matrice de confusion",
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="white")
+    )
+
+    # Affichage
+    col1, col2 = st.columns(2)
+    with col1:
+        st.plotly_chart(roc_fig, use_container_width=True)
+    with col2:
+        st.plotly_chart(cm_fig, use_container_width=True)
+
+    st.markdown(f"*AUC :* {auc:.3f}  *Gini :* {gini:.3f}")
+
+    # =====================================================
+    # 🔎 CONTRIBUTION DES FACTEURS (importance des variables)
+    # =====================================================
+    with st.expander("Contribution des facteurs (importance des variables)"):
+        # Récupération des coefficients du modèle
+        coef = model.coef_[0]
+        variables = X.columns
+
+        coef_df = pd.DataFrame({
+            "Variable": variables,
+            "Coefficient": coef,
+            "Contribution": np.abs(coef)  # pour classer par importance absolue
+        }).sort_values(by="Contribution", ascending=True)
+
+        # Interprétation :
+        # - Coefficient positif → augmente la probabilité d'avoir un cancer
+        # - Coefficient négatif → diminue cette probabilité
+
+        st.markdown("""
+        Les coefficients de la régression logistique indiquent l'influence de chaque variable :
+        - *Valeur positive* → augmente le risque estimé de cancer  
+        - *Valeur négative* → réduit le risque estimé  
+        """)
+
+        # Graphique Plotly barres horizontales
+        fig_coef = px.bar(
+            coef_df,
+            x="Coefficient",
+            y="Variable",
+            orientation="h",
+            color="Coefficient",
+            color_continuous_scale=["#4B56EB", "#E63718"],  # bleu -> négatif, rouge -> positif
+            text="Coefficient",
+            title="Contribution des facteurs au risque estimé de cancer",
+        )
+
+        fig_coef.update_traces(texttemplate="%{text:.3f}", textposition="outside",
+                               textfont=dict(size=14, color="white"))
+        fig_coef.update_layout(
+            plot_bgcolor="rgba(0,0,0,0)",
+            paper_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="white"),
+            coloraxis_showscale=False,
+            xaxis_title="Coefficient (influence sur la probabilité)",
+            yaxis_title="Variable"
+        )
+
+        st.plotly_chart(fig_coef, use_container_width=True)
+
+        # On affiche aussi les valeurs exactes
+        st.dataframe(coef_df[["Variable", "Coefficient"]].sort_values(by="Coefficient", ascending=False))
