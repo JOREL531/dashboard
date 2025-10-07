@@ -1,9 +1,7 @@
 import pandas as pd
 import numpy as np
 import streamlit as st
-#import matplotlib.pyplot as plt
-#import seaborn as sns
-#from plotnine import ggplot, aes, geom_tile, geom_text, scale_fill_gradient, theme_minimal, theme, element_text, geom_col, element_blank
+import datetime as _dt
 import plotly.express as px
 
 from sklearn.model_selection import train_test_split
@@ -109,7 +107,7 @@ barplot_groupe_fig = px.bar(summary,x="Sexe_label",y="Count",
 color="Diagnostic", # barre par couleur selon le diagnostic
 barmode="group", # barres côte à côte (groupées)
 text="Count", # chiffres sur les barres
-color_discrete_map={"Pas de cancer": "#4B56EB", "Cancer": "#E63718"} # optionnel : couleurs custom
+color_discrete_map={"Pas de cancer": "#8A91F5", "Cancer": "#EF553B"} # optionnel : couleurs custom
 )
 
 barplot_groupe_fig.update_traces(
@@ -220,13 +218,41 @@ with col3:
 
 st.subheader("Facteurs Médicaux")
 
+# --- Comptage croisé ---
+cross_tab = df_filtered.groupby(['Genetic_label', 'Diagnosis_label']).size().reset_index(name='count')
+cross_tab['percent'] = cross_tab.groupby('Genetic_label')['count'].transform(lambda x: 100 * x / x.sum())
+cross_tab["Diagnostic"] = cross_tab["Diagnosis_label"]
+
+# --- Création du graphique Plotly ---
+fig_risk = px.bar( cross_tab, x='percent', y='Genetic_label',
+    color='Diagnostic',
+    orientation='h',  # rend le barplot horizontal
+    barmode='stack',
+    color_discrete_map={"Pas de cancer": "#8A91F5", "Cancer": "#EF553B"}  # optionnel : couleurs douces
+    #labels={'percent': 'Pourcentage', 'Genetic_label': 'Risque génétique', 'Diagnosis_label': 'Diagnostic'}
+)
+fig_risk.update_traces(width=0.5)
+# --- Personnalisation du graphique ---
+fig_risk.update_layout(
+    title='Répartition du risque génétique selon le diagnostic de cancer',
+    xaxis_title='Pourcentage (%)',
+    yaxis_title='',
+    xaxis=dict(showgrid=True, gridcolor="gray", gridwidth=1),
+    legend_title='Diagnostic de cancer',
+    plot_bgcolor="rgba(0,0,0,0)",
+    paper_bgcolor="rgba(0,0,0,0)",
+    font=dict(color="white")
+)
+
+
+###################################################
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.plotly_chart(fig_risk, use_container_width=True)
 
 
 
-
-
-
-
+#################################### TASNIM #########################################""
 
 st.subheader("Prédiction : prédire la probabilité d'avoir un cancer")
 
@@ -416,3 +442,165 @@ with st.expander("Performances du modèle (ROC, Gini, matrice de confusion)"):
 
         # On affiche aussi les valeurs exactes
         st.dataframe(coef_df[["Variable", "Coefficient"]].sort_values(by="Coefficient", ascending=False))
+
+
+
+##################### SILYA ###########################################
+
+
+#   PATIENTS À HAUT RISQUE
+st.header("Patients à haut risque")
+
+
+
+# Définir les bornes de dates
+start = pd.Timestamp("2022-01-01")
+end = pd.Timestamp("2025-10-01")
+
+# Générer des timestamps aléatoires entre les deux bornes
+df["derniere_date_de_consultation"] = pd.to_datetime(
+    np.random.randint(start.value // 10**9, end.value // 10**9, size=len(df)),
+    unit="s"
+)
+
+
+
+# --- Constantes ---
+proba_col = "proba_col"
+date_col = "_last_consult_dt_"
+
+# --- Sécurité : si ces variables n’existent pas encore ---
+try:
+    first_name_col
+except NameError:
+    first_name_col = None
+try:
+    last_name_col
+except NameError:
+    last_name_col = None
+
+# --- Features du modèle ---
+feature_cols = ["Age", "BMI", "Smoking", "GeneticRisk", "PhysicalActivity", "AlcoholIntake"]
+if "X" not in globals():
+    X = df[feature_cols]
+
+# --- Parser dates ---
+df[date_col] = pd.to_datetime(df['derniere_date_de_consultation'], dayfirst=True, errors="coerce").dt.date
+
+# --- Colonne de probabilités ---
+try:
+    df[proba_col] = model.predict_proba(X)[:, 1]
+except Exception:
+    df[proba_col] = np.nan
+
+# --- UI ---
+cA, cB, cC = st.columns([1, 1, 2])
+with cA:
+    years_threshold = st.slider("Dernière date", min_value=1, max_value=5, value=2, step=1)
+with cB:
+    weekly_mode = st.checkbox(
+        "Mode hebdo (semaine ISO)",
+        value=True,
+        help="Prend toute la semaine (lun→dim) autour de la date du jour."
+    )
+with cC:
+    proba_threshold = st.slider(
+        "Seuil proba (%)", min_value=0, max_value=100, value=60, step=5,
+        help="Filtre les patients dont la probabilité prédite est ≥ ce seuil."
+    )
+
+
+# --- Utils dates ---
+def minus_years(d: _dt.date, years: int) -> _dt.date:
+    try:
+        return d.replace(year=d.year - years)
+    except ValueError:
+        if d.month == 2 and d.day == 29:
+            return _dt.date(d.year - years, 2, 28)
+        dd = d.day
+        while dd > 28:
+            try:
+                return _dt.date(d.year - years, d.month, dd)
+            except ValueError:
+                dd -= 1
+        return _dt.date(d.year - years, d.month, dd)
+
+def iso_week_bounds(d: _dt.date) -> tuple[_dt.date, _dt.date]:
+    monday = d - _dt.timedelta(days=d.weekday())
+    sunday = monday + _dt.timedelta(days=6)
+    return monday, sunday
+
+today = _dt.date.today()
+
+# --- Filtrage par date ---
+ref_date = minus_years(today, years_threshold)
+if weekly_mode:
+    week_start, week_end = iso_week_bounds(ref_date)
+    mask_date = df[date_col].between(week_start, week_end)
+    info_date = f"Semaine du {week_start.strftime('%d/%m/%Y')} au {week_end.strftime('%d/%m/%Y')}"
+else:
+    mask_date = (df[date_col] == ref_date)
+    info_date = f"Jour précis : {ref_date.strftime('%d/%m/%Y')}"
+
+# --- Filtrage proba obligatoire ---
+mask = mask_date & (df[proba_col] >= (proba_threshold / 100.0))
+
+df_candidates = df.loc[mask].copy()
+df_candidates.sort_values(by=proba_col, ascending=False, inplace=True)
+
+# --- Affichage ---
+st.subheader(f"Liste prioritaire — {info_date}")
+
+if df_candidates.empty:
+    st.info(f"Aucun patient pour {info_date} et proba ≥ {proba_threshold}%.")
+else:
+    for idx, row in df_candidates.iterrows():
+        label_parts = [f"#{idx}"]
+        if last_name_col and last_name_col in df.columns:
+            label_parts.append(str(row[last_name_col]))
+        if first_name_col and first_name_col in df.columns:
+            label_parts.append(str(row[first_name_col]))
+        label = " ".join(label_parts)
+
+        c1, c2 = st.columns([3, 2])
+        with c1:
+            if st.button(label, key=f"btn_patient_{idx}"):
+                st.session_state["selected_patient_idx"] = int(idx)
+        with c2:
+            date_val = row[date_col]
+            date_txt = date_val.strftime("%d/%m/%Y") if isinstance(date_val, _dt.date) else "—"
+            proba_txt = f" · Proba: **{row[proba_col]*100:.1f}%**"
+            st.write(f"Dernière consult.: **{date_txt}**{proba_txt}")
+
+
+    st.markdown("---")
+
+    # Dossier patient
+    sel_idx = st.session_state.get("selected_patient_idx", None)
+    if sel_idx is not None and sel_idx in df.index:
+        st.subheader("📁 Dossier patient")
+        patient = df.loc[sel_idx].copy()
+
+        # --- Colonnes à exclure (labels, catégories, etc.) ---
+        exclude_cols = [
+            "Sexe_label", "Tabac_label", "Genetic_label",
+            "Diagnosis_label", "classe_age", "_last_consult_dt_"
+        ]
+
+        # --- Colonnes importantes à garder si elles existent ---
+        highlight_cols = [
+            first_name_col, last_name_col, date_col, proba_col,
+            "Age", "BMI", "Smoking", "GeneticRisk",
+            "PhysicalActivity", "AlcoholIntake", "Diagnosis"
+        ]
+        highlight_cols = [
+            c for c in highlight_cols
+            if c and (c in patient.index) and (c not in exclude_cols)
+        ]
+
+        with st.expander("Tous les champs"):
+
+            valid_cols = [c for c in df.columns if c not in exclude_cols]
+            st.dataframe(patient[valid_cols].to_frame("Valeur"))
+
+        st.checkbox("Marquer pour rappel", key=f"chk_reminder_{sel_idx}")
