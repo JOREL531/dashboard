@@ -451,19 +451,10 @@ with st.expander("Performances du modèle (ROC, Gini, matrice de confusion)"):
 #   PATIENTS À HAUT RISQUE
 st.header("Patients à haut risque")
 
-
-
-# Définir les bornes de dates
-start = pd.Timestamp("2022-01-01")
-end = pd.Timestamp("2025-10-01")
-
-# Générer des timestamps aléatoires entre les deux bornes
-df["derniere_date_de_consultation"] = pd.to_datetime(
-    np.random.randint(start.value // 10**9, end.value // 10**9, size=len(df)),
-    unit="s"
-)
-
-
+import datetime as _dt
+import pandas as pd
+import numpy as np
+df = pd.read_csv("data/The_Cancer_data_1500_V2_modifie.csv",  sep=",")
 
 # --- Constantes ---
 proba_col = "proba_col"
